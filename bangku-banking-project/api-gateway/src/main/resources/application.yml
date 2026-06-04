@@ -1,0 +1,19 @@
+server:
+  port: ${SERVER_PORT:8080}
+spring:
+  application:
+    name: bangku-api-gateway
+account:
+  service:
+    url: ${ACCOUNT_SERVICE_URL:http://localhost:8081}
+transaction:
+  service:
+    url: ${TRANSACTION_SERVICE_URL:http://localhost:8082}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+logging:
+  level:
+    com.bangku: DEBUG

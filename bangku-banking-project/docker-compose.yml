@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: bangku-postgres
+    environment:
+      POSTGRES_USER: bangku
+      POSTGRES_PASSWORD: bangku_secret
+      POSTGRES_DB: bangku_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - bangku-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bangku"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: bangku-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - bangku-network
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: bangku-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: bangku
+      RABBITMQ_DEFAULT_PASS: bangku_secret
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - bangku-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Microservices ────────────────────────────────────────────────────────────
+  account-service:
+    build:
+      context: ./account-service
+      dockerfile: Dockerfile
+    container_name: bangku-account-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bangku_db
+      SPRING_DATASOURCE_USERNAME: bangku
+      SPRING_DATASOURCE_PASSWORD: bangku_secret
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_REDIS_HOST: redis
+      SERVER_PORT: 8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - bangku-network
+    restart: unless-stopped
+
+  transaction-service:
+    build:
+      context: ./transaction-service
+      dockerfile: Dockerfile
+    container_name: bangku-transaction-service
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bangku_db
+      SPRING_DATASOURCE_USERNAME: bangku
+      SPRING_DATASOURCE_PASSWORD: bangku_secret
+      SPRING_RABBITMQ_HOST: rabbitmq
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      SERVER_PORT: 8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - bangku-network
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    container_name: bangku-notification-service
+    environment:
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SERVER_PORT: 8083
+    ports:
+      - "8083:8083"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - bangku-network
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: bangku-api-gateway
+    environment:
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      TRANSACTION_SERVICE_URL: http://transaction-service:8082
+      SERVER_PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      - account-service
+      - transaction-service
+    networks:
+      - bangku-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  bangku-network:
+    driver: bridge

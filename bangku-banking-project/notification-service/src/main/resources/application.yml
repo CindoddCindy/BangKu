@@ -1,0 +1,22 @@
+server:
+  port: ${SERVER_PORT:8083}
+spring:
+  application:
+    name: bangku-notification-service
+  rabbitmq:
+    host: ${SPRING_RABBITMQ_HOST:localhost}
+    port: 5672
+    username: bangku
+    password: bangku_secret
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 10
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+logging:
+  level:
+    com.bangku: INFO
